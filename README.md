@@ -1,4 +1,4 @@
-```markdown
+```
 ## Sobre o projeto
 
 O RemoteLab (Simulador de RAT - Remote Access Trojan) é um projeto de offsec que fiz pra aprender, na prática, como duas máquinas conversam entre si pela rede. Em termos simples: um programa (o **Agent**) roda numa máquina e se conecta a outro programa (o **Controller**), que roda em outra máquina. Uma vez conectados, o Controller consegue pedir informações e o Agent responde — tipo uma central que monitora um posto remoto e recebe atualizações de status dele.
@@ -25,7 +25,7 @@ A comunicação entre os dois acontece por uma tecnologia chamada **socket TCP**
 
 ## Arquitetura do código
 
-```
+
 remotelab/
 ├── agent/
 │   ├── agent.py              # O programa que roda na máquina monitorada
@@ -40,7 +40,7 @@ remotelab/
 │   └── remotelab.ini         # Arquivo onde se ajustam endereço, porta, etc.
 ├── logs/                      # Onde ficam os registros gerados durante o uso
 └── requirements.txt           # Lista de bibliotecas Python necessárias
-```
+
 
 Uma decisão interessante do projeto: é o Agent quem liga para o Controller, e não o contrário. Parece estranho à primeira vista, mas é assim que sistemas de monitoramento reais costumam funcionar — evita que a máquina monitorada precise ficar com uma "porta aberta" esperando ligação, o que seria um risco de segurança maior.
 
