@@ -28,18 +28,18 @@ A comunicação entre os dois acontece por uma tecnologia chamada **socket TCP**
 ```
 remotelab/
 ├── agent/
-│   ├── agent.py          # O programa que roda na máquina monitorada
-│   └── sysinfo.py        # Reúne informações do sistema (CPU, memória, etc.)
+│   ├── agent.py              # O programa que roda na máquina monitorada
+│   └── sysinfo.py            # Reúne informações do sistema (CPU, memória, etc.)
 ├── controller/
-│   ├── controller.py     # O painel de controle (o que o operador usa)
-│   └── session_manager.py# Recebe conexões e organiza cada Agent conectado
+│   ├── controller.py         # O painel de controle (o que o operador usa)
+│   └── session_manager.py    # Recebe conexões e organiza cada Agent conectado
 ├── shared/
-│   ├── protocol.py       # As "regras da conversa" entre Agent e Controller
-│   └── logger.py         # Registra tudo que acontece, pra consulta depois
+│   ├── protocol.py           # As "regras da conversa" entre Agent e Controller
+│   └── logger.py             # Registra tudo que acontece, pra consulta depois
 ├── config/
-│   └── remotelab.ini     # Arquivo onde se ajustam endereço, porta, etc.
-├── logs/                 # Onde ficam os registros gerados durante o uso
-└── requirements.txt      # Lista de bibliotecas Python necessárias
+│   └── remotelab.ini         # Arquivo onde se ajustam endereço, porta, etc.
+├── logs/                      # Onde ficam os registros gerados durante o uso
+└── requirements.txt           # Lista de bibliotecas Python necessárias
 ```
 
 Uma decisão interessante do projeto: é o Agent quem liga para o Controller, e não o contrário. Parece estranho à primeira vista, mas é assim que sistemas de monitoramento reais costumam funcionar — evita que a máquina monitorada precise ficar com uma "porta aberta" esperando ligação, o que seria um risco de segurança maior.
@@ -60,25 +60,22 @@ Toda mensagem trocada é um pacote de texto organizado (no formato **JSON**, bem
 **Sequência de uma conversa típica:**
 
 ```
-Agent                           Controller
-  |──── conecta ────────────────────>|
-  |──── "cheguei, aqui está o token"─>|  (confere a identificação)
-  |<─── "me diz seu status" ─────────|
-  |──── "está tudo ok" ──────────────>|
-  |                                    |
-  |  (a cada 15 segundos)              |
-  |──── "ainda estou aqui" ──────────>|
-  |                                    |
-  |<─── "encerrar conexão" ──────────|
-  |──── "ok, encerrando" ────────────>|
+Agent                                Controller
+  |---- conecta ------------------------>|
+  |---- "cheguei, aqui esta o token" ---->|   (confere a identificacao)
+  |<--- "me diz seu status" -------------|
+  |---- "esta tudo ok" ------------------>|
+  |                                       |
+  |   (a cada 15 segundos)                |
+  |---- "ainda estou aqui" -------------->|
+  |                                       |
+  |<--- "encerrar conexao" --------------|
+  |---- "ok, encerrando" ----------------->|
 ```
 
 Cada mensagem tem um código único (`msg_id`), que funciona como o número de um pedido de delivery: garante que a resposta que chega é exatamente a resposta daquele pedido específico, mesmo com várias conversas acontecendo ao mesmo tempo.
 
 ---
-
-## O que cada parte do código faz
-
 **`shared/protocol.py`** — define o "vocabulário" que Agent e Controller usam pra se entenderem: quais tipos de mensagem existem e como elas são organizadas.
 
 **`shared/logger.py`** — registra tudo o que acontece em arquivos de log, guardando as últimas execuções sem deixar o arquivo crescer pra sempre.
