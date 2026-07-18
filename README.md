@@ -1,15 +1,7 @@
 ```markdown
-# RemoteLab — Documentação Técnica
-
-![Python](https://img.shields.io/badge/Python-3.10+-1a1a1a?style=flat&logo=python&logoColor=E5007D)
-![Status](https://img.shields.io/badge/status-projeto%20acadêmico-7A1F4B)
-![Licença](https://img.shields.io/badge/uso-laboratório%20isolado-1a1a1a)
-
-> defesa cibernética · blue team · investigação de ameaças
-
 ## Sobre o projeto
 
-O RemoteLab (Simulador de RAT - Remote Access Troajan) é um projeto que fiz pra aprender, na prática, como duas máquinas conversam entre si pela rede. Em termos simples: um programa (o **Agent**) roda numa máquina e se conecta a outro programa (o **Controller**), que roda em outra máquina. Uma vez conectados, o Controller consegue pedir informações e o Agent responde — tipo uma central que monitora um posto remoto e recebe atualizações de status dele.
+O RemoteLab (Simulador de RAT - Remote Access Troajan) é um projeto de offsec que fiz pra aprender, na prática, como duas máquinas conversam entre si pela rede. Em termos simples: um programa (o **Agent**) roda numa máquina e se conecta a outro programa (o **Controller**), que roda em outra máquina. Uma vez conectados, o Controller consegue pedir informações e o Agent responde — tipo uma central que monitora um posto remoto e recebe atualizações de status dele.
 
 Não é um projeto de especialista, é um projeto de estudo: desenvolvi com apoio de ferramentas de IA ao longo do processo, o que me ajudou a acelerar a implementação, mas entendo e consigo explicar cada decisão de arquitetura e o funcionamento completo do sistema.
 
@@ -154,4 +146,3 @@ Sou a Maria Clara, estudante de Defesa Cibernética na FIAP, com foco em Blue Te
 
 [LinkedIn](https://www.linkedin.com/in/maria-clara-costa-515542255)
 ```
-
