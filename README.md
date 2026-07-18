@@ -1,7 +1,7 @@
 ```markdown
 ## Sobre o projeto
 
-O RemoteLab (Simulador de RAT - Remote Access Troajan) é um projeto de offsec que fiz pra aprender, na prática, como duas máquinas conversam entre si pela rede. Em termos simples: um programa (o **Agent**) roda numa máquina e se conecta a outro programa (o **Controller**), que roda em outra máquina. Uma vez conectados, o Controller consegue pedir informações e o Agent responde — tipo uma central que monitora um posto remoto e recebe atualizações de status dele.
+O RemoteLab (Simulador de RAT - Remote Access Trojan) é um projeto de offsec que fiz pra aprender, na prática, como duas máquinas conversam entre si pela rede. Em termos simples: um programa (o **Agent**) roda numa máquina e se conecta a outro programa (o **Controller**), que roda em outra máquina. Uma vez conectados, o Controller consegue pedir informações e o Agent responde — tipo uma central que monitora um posto remoto e recebe atualizações de status dele.
 
 Não é um projeto de especialista, é um projeto de estudo: desenvolvi com apoio de ferramentas de IA ao longo do processo, o que me ajudou a acelerar a implementação, mas entendo e consigo explicar cada decisão de arquitetura e o funcionamento completo do sistema.
 
@@ -59,7 +59,7 @@ Toda mensagem trocada é um pacote de texto organizado (no formato **JSON**, bem
 
 **Sequência de uma conversa típica:**
 
-```
+
 Agent                                Controller
   |---- conecta ------------------------>|
   |---- "cheguei, aqui esta o token" ---->|   (confere a identificacao)
@@ -71,7 +71,7 @@ Agent                                Controller
   |                                       |
   |<--- "encerrar conexao" --------------|
   |---- "ok, encerrando" ----------------->|
-```
+
 
 Cada mensagem tem um código único (`msg_id`), que funciona como o número de um pedido de delivery: garante que a resposta que chega é exatamente a resposta daquele pedido específico, mesmo com várias conversas acontecendo ao mesmo tempo.
 
@@ -98,7 +98,7 @@ Cada mensagem tem um código único (`msg_id`), que funciona como o número de u
 ```cmd
 cd remotelab
 pip install -r requirements.txt
-```
+
 
 **2. Ajustar a configuração** em `config/remotelab.ini` — informar o endereço IP e a porta que o Controller vai usar.
 
@@ -107,12 +107,11 @@ pip install -r requirements.txt
 Numa janela de terminal, inicia o Controller primeiro:
 ```cmd
 python -m controller.controller
-```
 
 Em outra janela (ou outra máquina virtual), inicia o Agent:
 ```cmd
 python -m agent.agent
-```
+
 
 ---
 
