@@ -1,331 +1,157 @@
-"""
-RemoteLab - Agent Principal
-============================
-Aplicação cliente que:
-  1. Conecta ao Controller via TCP
-  2. Envia heartbeats periódicos
-  3. Recebe comandos e os executa via handlers locais
-  4. Reconecta automaticamente em caso de queda
+```markdown
+# RemoteLab — Documentação Técnica
 
-Arquitetura de threads:
-  - Thread Principal  : loop de reconexão
-  - Thread de Receive : aguarda comandos do Controller
-  - Thread de Heartbeat: envia pulso periódico
+![Python](https://img.shields.io/badge/Python-3.10+-1a1a1a?style=flat&logo=python&logoColor=E5007D)
+![Status](https://img.shields.io/badge/status-projeto%20acadêmico-7A1F4B)
+![Licença](https://img.shields.io/badge/uso-laboratório%20isolado-1a1a1a)
 
-Uso: python agent.py [--config caminho/remotelab.ini]
-"""
+> defesa cibernética · blue team · investigação de ameaças
 
-import sys
-import os
-import time
-import socket
-import threading
-import configparser
-import argparse
-from pathlib import Path
+## Sobre o projeto
 
-# Adiciona o diretório raiz ao path para importar shared.*
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+O RemoteLab (Simulador de RAT - Remote Access Troajan) é um projeto que fiz pra aprender, na prática, como duas máquinas conversam entre si pela rede. Em termos simples: um programa (o **Agent**) roda numa máquina e se conecta a outro programa (o **Controller**), que roda em outra máquina. Uma vez conectados, o Controller consegue pedir informações e o Agent responde — tipo uma central que monitora um posto remoto e recebe atualizações de status dele.
 
-from shared.protocol import (
-    Message, CommandType, ResponseStatus,
-    build_response, build_heartbeat,
-    send_message, recv_message
-)
-from shared.logger import setup_logger
-from agent.sysinfo import (
-    collect_sysinfo, collect_netstat,
-    collect_whoami, collect_env, list_directory
-)
+Não é um projeto de especialista, é um projeto de estudo: desenvolvi com apoio de ferramentas de IA ao longo do processo, o que me ajudou a acelerar a implementação, mas entendo e consigo explicar cada decisão de arquitetura e o funcionamento completo do sistema.
 
+Duas coisas guiaram todo o design, mesmo sendo um projeto de aprendizado:
+- **Nenhum comando é executado direto no sistema operacional** — tudo passa por bibliotecas Python seguras, não por atalhos que poderiam ser perigosos.
+- **Dados sensíveis nunca trafegam sem filtro** — se alguma informação coletada tiver palavras como "senha", "token" ou "chave" no nome, ela é automaticamente escondida antes de sair da máquina.
 
-# ---------------------------------------------------------------------------
-# Dispatcher de Comandos
-# ---------------------------------------------------------------------------
+> **Aviso importante:** este projeto foi feito e testado apenas em máquinas virtuais isoladas, sem acesso à internet ou a redes reais, como parte de uma disciplina da faculdade. Ele nunca deve ser usado para monitorar qualquer computador sem autorização — isso é crime no Brasil, previsto na Lei 12.737/2012.
 
-def dispatch_command(cmd_msg: Message, logger) -> Message:
-    """
-    Recebe uma mensagem de comando, executa a ação correspondente
-    e retorna a mensagem de resposta.
+---
 
-    Este é o núcleo do agente: cada CommandType tem um handler.
-    Adicionar um novo comando = adicionar um elif aqui.
-    """
-    payload = cmd_msg.payload
-    cmd     = payload.get("command", "")
-    args    = payload.get("args")
-    msg_id  = cmd_msg.msg_id
+## Como funciona, de forma simples
 
-    logger.info(f"Executando comando: {cmd} | args={args} | id={msg_id}")
+Pensa assim: o **Agent** é como uma pessoa que liga pra uma central de operações assim que chega ao trabalho, avisa "cheguei, aqui está minha identificação" e fica esperando instruções. De tempos em tempos, ela manda um sinal de "ainda estou aqui" (isso se chama **heartbeat**, ou batimento cardíaco, porque é literalmente um pulso de vida). Quando a central manda uma tarefa, ela executa e responde com o resultado.
 
-    try:
-        if cmd == CommandType.PING:
-            data = {"pong": True, "time": time.time()}
+O **Controller** é essa central: ele fica esperando novas ligações, confere a identificação de quem liga, e organiza o que cada "funcionário" (Agent) está fazendo.
 
-        elif cmd == CommandType.SYSINFO:
-            data = collect_sysinfo()
+A comunicação entre os dois acontece por uma tecnologia chamada **socket TCP** — é basicamente o telefone que os dois programas usam pra conversar pela rede, garantindo que as mensagens cheguem completas e na ordem certa.
 
-        elif cmd == CommandType.WHOAMI:
-            data = collect_whoami()
+---
 
-        elif cmd == CommandType.GETENV:
-            data = collect_env()
+## Arquitetura do código
 
-        elif cmd == CommandType.NETSTAT:
-            data = collect_netstat()
+```
+remotelab/
+├── agent/
+│   ├── agent.py          # O programa que roda na máquina monitorada
+│   └── sysinfo.py        # Reúne informações do sistema (CPU, memória, etc.)
+├── controller/
+│   ├── controller.py     # O painel de controle (o que o operador usa)
+│   └── session_manager.py# Recebe conexões e organiza cada Agent conectado
+├── shared/
+│   ├── protocol.py       # As "regras da conversa" entre Agent e Controller
+│   └── logger.py         # Registra tudo que acontece, pra consulta depois
+├── config/
+│   └── remotelab.ini     # Arquivo onde se ajustam endereço, porta, etc.
+├── logs/                 # Onde ficam os registros gerados durante o uso
+└── requirements.txt      # Lista de bibliotecas Python necessárias
+```
 
-        elif cmd == CommandType.LISTDIR:
-            path = args if args else os.path.expanduser("~")
-            data = list_directory(path)
+Uma decisão interessante do projeto: é o Agent quem liga para o Controller, e não o contrário. Parece estranho à primeira vista, mas é assim que sistemas de monitoramento reais costumam funcionar — evita que a máquina monitorada precise ficar com uma "porta aberta" esperando ligação, o que seria um risco de segurança maior.
 
-        elif cmd == CommandType.DISCONNECT:
-            # Sinaliza ao loop principal que deve desconectar
-            data = {"message": "Agente encerrando conexão conforme solicitado."}
-            resp = build_response(ResponseStatus.OK, data, msg_id)
-            return resp  # O caller vai tratar o DISCONNECT depois
+---
 
-        else:
-            data = {"error": f"Comando desconhecido: {cmd}"}
-            return build_response(ResponseStatus.ERROR, data, msg_id)
+## Como as máquinas trocam mensagens
 
-        return build_response(ResponseStatus.OK, data, msg_id)
+Toda mensagem trocada é um pacote de texto organizado (no formato **JSON**, bem parecido com o preenchimento de um formulário padronizado). Cada mensagem tem um tipo:
 
-    except Exception as e:
-        logger.exception(f"Erro ao executar comando {cmd}: {e}")
-        return build_response(
-            ResponseStatus.ERROR,
-            {"error": str(e), "command": cmd},
-            msg_id
-        )
+| Tipo de mensagem | Quem manda | O que significa |
+|---|---|---|
+| `hello` | Agent → Controller | "Cheguei, aqui está minha identificação" |
+| `command` | Controller → Agent | "Preciso que você faça isso" |
+| `response` | Agent → Controller | "Aqui está o resultado" |
+| `heartbeat` | Agent → Controller | "Ainda estou aqui, tudo funcionando" |
 
+**Sequência de uma conversa típica:**
 
-# ---------------------------------------------------------------------------
-# Classe Principal do Agent
-# ---------------------------------------------------------------------------
+```
+Agent                           Controller
+  |──── conecta ────────────────────>|
+  |──── "cheguei, aqui está o token"─>|  (confere a identificação)
+  |<─── "me diz seu status" ─────────|
+  |──── "está tudo ok" ──────────────>|
+  |                                    |
+  |  (a cada 15 segundos)              |
+  |──── "ainda estou aqui" ──────────>|
+  |                                    |
+  |<─── "encerrar conexão" ──────────|
+  |──── "ok, encerrando" ────────────>|
+```
 
-class RemoteLabAgent:
-    """
-    Gerencia o ciclo de vida do agente:
-    conexão, reconexão, heartbeat e processamento de comandos.
-    """
+Cada mensagem tem um código único (`msg_id`), que funciona como o número de um pedido de delivery: garante que a resposta que chega é exatamente a resposta daquele pedido específico, mesmo com várias conversas acontecendo ao mesmo tempo.
 
-    def __init__(self, config_path: str):
-        self.config = self._load_config(config_path)
-        self.logger = setup_logger(
-            "agent",
-            log_dir=self.config.get("agent", "log_dir", fallback="logs/agent")
-        )
+---
 
-        # Parâmetros de rede
-        self.host    = self.config.get("network", "host", fallback="127.0.0.1")
-        self.port    = self.config.getint("network", "port", fallback=9999)
-        self.timeout = self.config.getint("network", "socket_timeout", fallback=10)
+## O que cada parte do código faz
 
-        # Parâmetros do agente
-        self.agent_id         = self.config.get("agent", "agent_id", fallback="AGENT-001")
-        self.heartbeat_iv     = self.config.getint("agent", "heartbeat_interval", fallback=15)
-        self.reconnect_delay  = self.config.getint("agent", "reconnect_delay", fallback=5)
-        self.max_reconnects   = self.config.getint("agent", "max_reconnect_attempts", fallback=0)
-        self.auth_token       = self.config.get("security", "auth_token", fallback="")
+**`shared/protocol.py`** — define o "vocabulário" que Agent e Controller usam pra se entenderem: quais tipos de mensagem existem e como elas são organizadas.
 
-        # Estado interno
-        self.sock              = None
-        self.running           = False
-        self.connected         = False
-        self._stop_event       = threading.Event()
-        self._lock             = threading.Lock()  # Protege o socket contra race conditions
+**`shared/logger.py`** — registra tudo o que acontece em arquivos de log, guardando as últimas execuções sem deixar o arquivo crescer pra sempre.
 
-    def _load_config(self, path: str) -> configparser.ConfigParser:
-        cfg = configparser.ConfigParser()
-        if os.path.exists(path):
-            cfg.read(path, encoding="utf-8")
-        else:
-            print(f"[AVISO] Config não encontrada: {path}. Usando defaults.")
-        return cfg
+**`agent/sysinfo.py`** — coleta informações básicas da máquina (sistema operacional, uso de memória, conexões de rede ativas), sempre usando bibliotecas Python seguras, nunca abrindo um terminal por trás.
 
-    # ------------------------------------------------------------------
-    # Conexão
-    # ------------------------------------------------------------------
+**`agent/agent.py`** — o "cérebro" do Agent. Cuida da conexão, tenta reconectar automaticamente se cair, e executa os comandos recebidos.
 
-    def _connect(self) -> bool:
-        """Tenta estabelecer conexão TCP com o Controller."""
-        try:
-            self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.sock.settimeout(self.timeout)
-            self.sock.connect((self.host, self.port))
-            self.connected = True
-            self.logger.info(f"Conectado ao Controller em {self.host}:{self.port}")
+**`controller/session_manager.py`** — organiza todas as conexões recebidas, sabendo qual resposta pertence a qual pedido.
 
-            # Envia identificação imediata
-            hello = Message(
-                msg_type="hello",
-                payload={"agent_id": self.agent_id, "auth_token": self.auth_token}
-            )
-            send_message(self.sock, hello)
-            return True
+**`controller/controller.py`** — a tela de menu que um operador usaria pra ver quem está conectado e escolher o que pedir pra cada Agent.
 
-        except (ConnectionRefusedError, socket.timeout, OSError) as e:
-            self.logger.warning(f"Falha na conexão: {e}")
-            self.connected = False
-            if self.sock:
-                self.sock.close()
-                self.sock = None
-            return False
+---
 
-    def _disconnect(self):
-        """Encerra a conexão de forma limpa."""
-        self.connected = False
-        if self.sock:
-            try:
-                self.sock.shutdown(socket.SHUT_RDWR)
-                self.sock.close()
-            except OSError:
-                pass
-            self.sock = None
-        self.logger.info("Desconectado do Controller.")
+## Como rodar (Windows)
 
-    # ------------------------------------------------------------------
-    # Thread de Heartbeat
-    # ------------------------------------------------------------------
+**Pré-requisitos:** Python 3.10 ou mais recente, e o `pip` (gerenciador de pacotes do Python) atualizado.
 
-    def _heartbeat_loop(self):
-        """
-        Envia um heartbeat periodicamente para informar ao Controller
-        que o agente está vivo. Roda em thread separada.
-        """
-        self.logger.debug("Thread de heartbeat iniciada.")
-        while not self._stop_event.is_set():
-            time.sleep(self.heartbeat_iv)
-            if self.connected and self.sock:
-                try:
-                    with self._lock:
-                        send_message(self.sock, build_heartbeat(self.agent_id))
-                    self.logger.debug("Heartbeat enviado.")
-                except OSError:
-                    self.logger.warning("Falha ao enviar heartbeat — conexão perdida.")
-                    self.connected = False
+**1. Instalar as dependências:**
+```cmd
+cd remotelab
+pip install -r requirements.txt
+```
 
-    # ------------------------------------------------------------------
-    # Thread de Recebimento
-    # ------------------------------------------------------------------
+**2. Ajustar a configuração** em `config/remotelab.ini` — informar o endereço IP e a porta que o Controller vai usar.
 
-    def _receive_loop(self):
-        """
-        Aguarda mensagens do Controller em loop bloqueante.
-        Processa comandos e envia respostas.
-        Roda em thread separada.
-        """
-        self.logger.debug("Thread de recebimento iniciada.")
-        while self.connected and not self._stop_event.is_set():
-            try:
-                msg = recv_message(self.sock)
-                if msg is None:
-                    self.logger.info("Controller encerrou a conexão.")
-                    self.connected = False
-                    break
+**3. Rodar:**
 
-                self.logger.debug(f"Mensagem recebida: type={msg.msg_type}")
+Numa janela de terminal, inicia o Controller primeiro:
+```cmd
+python -m controller.controller
+```
 
-                if msg.msg_type == "command":
-                    # Processa em thread para não bloquear o receive_loop
-                    t = threading.Thread(
-                        target=self._handle_command,
-                        args=(msg,),
-                        daemon=True
-                    )
-                    t.start()
+Em outra janela (ou outra máquina virtual), inicia o Agent:
+```cmd
+python -m agent.agent
+```
 
-            except socket.timeout:
-                continue  # Timeout normal, aguarda próxima mensagem
-            except OSError as e:
-                if self.connected:
-                    self.logger.error(f"Erro de socket no receive_loop: {e}")
-                self.connected = False
-                break
+---
 
-    def _handle_command(self, msg: Message):
-        """Executa um comando e envia a resposta (chamado em thread)."""
-        response = dispatch_command(msg, self.logger)
-        try:
-            with self._lock:
-                send_message(self.sock, response)
+## O que esse projeto me ensinou
 
-            # Se o comando era DISCONNECT, encerra
-            if msg.payload.get("command") == CommandType.DISCONNECT:
-                self.logger.info("Comando DISCONNECT recebido. Encerrando...")
-                self._stop_event.set()
-                self.connected = False
+- Como duas máquinas conseguem manter uma conexão de rede confiável e se reconectar sozinhas se a conexão cair
+- Como organizar um programa pra fazer várias coisas ao mesmo tempo sem uma atrapalhar a outra (isso se chama **threading**)
+- Como pensar em segurança desde o início — o que pode ser coletado, o que precisa ser escondido, e o que nunca deve ser feito de forma insegura
+- Como documentar um projeto técnico de um jeito que outra pessoa consiga entender e continuar
 
-        except OSError as e:
-            self.logger.error(f"Falha ao enviar resposta: {e}")
+---
 
-    # ------------------------------------------------------------------
-    # Loop Principal (com reconexão automática)
-    # ------------------------------------------------------------------
+## Limites conhecidos (e por que estão aqui)
 
-    def run(self):
-        """
-        Ponto de entrada principal do agente.
-        Gerencia reconexão automática e threads de suporte.
-        """
-        self.running = True
-        attempts = 0
+Todo projeto de aprendizado tem limitações, e prefiro deixar isso claro em vez de esconder:
 
-        self.logger.info(f"RemoteLab Agent '{self.agent_id}' iniciando...")
-        self.logger.info(f"Alvo: {self.host}:{self.port}")
+- **Sem criptografia real na comunicação** — os dados trafegam sem estar embaralhados. Num sistema de produção, isso seria resolvido com TLS.
+- **Autenticação simples** — usa uma senha fixa de acesso, não um sistema de segurança robusto.
+- **Sem compactação de dados** — mensagens grandes são enviadas do jeito que são, sem otimização.
 
-        # Inicia thread de heartbeat (fica ativa durante toda execução)
-        hb_thread = threading.Thread(target=self._heartbeat_loop, daemon=True)
-        hb_thread.start()
+Documentar essas limitações também faz parte de entender o projeto por completo.
 
-        while not self._stop_event.is_set():
-            if self.max_reconnects > 0 and attempts >= self.max_reconnects:
-                self.logger.error("Número máximo de tentativas atingido. Encerrando.")
-                break
+---
 
-            if not self._connect():
-                attempts += 1
-                wait = self.reconnect_delay
-                self.logger.info(f"Tentativa {attempts}. Reconectando em {wait}s...")
-                time.sleep(wait)
-                continue
+## Sobre mim
 
-            attempts = 0  # Reset ao conectar com sucesso
+Sou a Maria Clara, estudante de Defesa Cibernética na FIAP, com foco em Blue Team — SOC, monitoramento e detecção de ameaças. Fiz o RemoteLab numa disciplina de Análise de malware, e ele virou uma forma de entender, na prática, um simulador de remote access trojan, usado em reconhecimento do alvo.
 
-            # Inicia thread de recebimento
-            rx_thread = threading.Thread(target=self._receive_loop, daemon=True)
-            rx_thread.start()
-            rx_thread.join()  # Bloqueia até desconectar
+[LinkedIn](https://www.linkedin.com/in/maria-clara-costa-515542255)
+```
 
-            # Se não foi sinalizado para parar, tenta reconectar
-            if not self._stop_event.is_set():
-                self.logger.warning(f"Conexão perdida. Reconectando em {self.reconnect_delay}s...")
-                self._disconnect()
-                time.sleep(self.reconnect_delay)
-
-        self._disconnect()
-        self.logger.info("Agent encerrado.")
-
-
-# ---------------------------------------------------------------------------
-# Entry Point
-# ---------------------------------------------------------------------------
-
-def main():
-    parser = argparse.ArgumentParser(description="RemoteLab Agent")
-    parser.add_argument(
-        "--config",
-        default=os.path.join(os.path.dirname(__file__), "..", "config", "remotelab.ini"),
-        help="Caminho para o arquivo de configuração INI"
-    )
-    args = parser.parse_args()
-
-    agent = RemoteLabAgent(config_path=args.config)
-    try:
-        agent.run()
-    except KeyboardInterrupt:
-        print("\n[Agent] Interrompido pelo usuário.")
-
-
-if __name__ == "__main__":
-    main()
